@@ -540,14 +540,16 @@ public class InitialHandler extends PacketHandler implements PendingConnection
 
         if ( bungee.getBotFilter().needCheck( getName(), getAddress().getAddress() ) )
         {
+            bungee.getLogger().log( Level.INFO, "[BotFilter] Игрок {0} подключился. Проверяем...", InitialHandler.this );
             sendLoginSuccess( !sendLoginSuccess ); //Send a loginSuccess if sendLoginSuccess is false
             ch.setEncoderProtocol( Protocol.GAME );
             ch.setDecoderProtocol( Protocol.BotFilter );
             ch.getHandle().pipeline().get( HandlerBoss.class ).setHandler( new Connector( userCon, bungee.getBotFilter() ) );
         } else
         {
-            bungee.getLogger().log( Level.INFO, "{0} has connected", InitialHandler.this );
-            bungee.getBotFilter().saveUser( userCon.getName().toLowerCase(), IPUtils.getAddress( userCon ) ); //update timestamp
+//            bungee.getLogger().log( Level.INFO, "{0} has connected", InitialHandler.this );
+            bungee.getLogger().log( Level.INFO, "[BotFilter] Игрок {0} подключился без необходимости в проверке", InitialHandler.this );
+            bungee.getBotFilter().saveUser( userCon.getName().toLowerCase(), IPUtils.getAddress( userCon )); //update timestamp
             finishLogin( userCon, sendLoginSuccess ); //if true, dont send again login success
         }
     }
@@ -715,7 +717,18 @@ public class InitialHandler extends PacketHandler implements PendingConnection
     @Override
     public String toString()
     {
-        return "[" + ( ( getName() != null ) ? getName() : getSocketAddress() ) + "] <-> InitialHandler";
+        StringBuilder stringBuilder = new StringBuilder();
+        InetSocketAddress address = getAddress();
+        String name = getName();
+
+        stringBuilder.append(address);
+        if (name != null) {
+            stringBuilder.append("/");
+            stringBuilder.append(name);
+        }
+
+        return stringBuilder.toString();
+//        return "[" + ( ( getName() != null ) ? getName() : getAddress() ) + "] <-> InitialHandler";
     }
 
     @Override
