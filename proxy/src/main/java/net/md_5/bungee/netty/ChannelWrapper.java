@@ -7,10 +7,14 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+
 import lombok.Getter;
 import lombok.Setter;
+import net.md_5.bungee.BungeeCord;
 import net.md_5.bungee.compress.PacketCompressor;
 import net.md_5.bungee.compress.PacketDecompressor;
+import net.md_5.bungee.connection.InitialHandler;
 import net.md_5.bungee.protocol.MinecraftDecoder;
 import net.md_5.bungee.protocol.MinecraftEncoder;
 import net.md_5.bungee.protocol.PacketWrapper;
@@ -19,7 +23,6 @@ import net.md_5.bungee.protocol.packet.Kick;
 
 public class ChannelWrapper
 {
-
     private final Channel ch;
     @Getter
     @Setter

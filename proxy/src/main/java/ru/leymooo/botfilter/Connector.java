@@ -3,9 +3,6 @@ package ru.leymooo.botfilter;
 import com.google.common.base.Preconditions;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
@@ -24,6 +21,10 @@ import ru.leymooo.botfilter.caching.PacketUtils.KickType;
 import ru.leymooo.botfilter.caching.PacketsPosition;
 import ru.leymooo.botfilter.utils.IPUtils;
 import ru.leymooo.botfilter.utils.ManyChecksUtils;
+
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  *
@@ -87,7 +88,7 @@ public class Connector extends MoveHandler
         sendPing();
         this.botFilter.addConnection( this );
         //channel.writeAndFlush( PacketUtils.createPacket( new SetSlot( 0, 36, i, 1, 0 ), PacketUtils.getPacketId( new SetSlot(), version, Protocol.BotFilter ), version ), channel.voidPromise() );
-        LOGGER.log( Level.INFO, "[{0}] <-> BotFilter has connected", name );
+//        LOGGER.log( Level.INFO, "[{0}] <-> BotFilter has connected", name );
     }
 
     @Override
@@ -107,6 +108,16 @@ public class Connector extends MoveHandler
     @Override
     public void disconnected(ChannelWrapper channel) throws Exception
     {
+        switch (state) {
+            case ONLY_CAPTCHA:
+            case ONLY_POSITION:
+            case CAPTCHA_POSITION:
+                String info = "[BotFilter] Игрок " +
+                        userConnection +
+                        " вышел во время проверки, не дождавшись окончания";
+                LOGGER.log(Level.INFO, info);
+                break;
+        }
         botFilter.removeConnection( null, this );
         disconnected();
     }
@@ -138,7 +149,7 @@ public class Connector extends MoveHandler
                     changeStateToCaptcha();
                 } else
                 {
-                    failed( KickType.NOTPLAYER, "Too fast check passed" );
+                    failed( KickType.NOTPLAYER, "Не правильное падение" );
                 }
             }
             return;
@@ -146,9 +157,11 @@ public class Connector extends MoveHandler
         int devide = lastSend == 0 ? sentPings : sentPings - 1;
         if ( botFilter.checkBigPing( totalping / ( devide <= 0 ? 1 : devide ) ) )
         {
-            failed( KickType.PING, "Big ping" );
+            failed( KickType.PING, "Большой пинг" );
             return;
         }
+
+        StringBuilder stringBuilder = new StringBuilder();
         state = CheckState.SUCCESSFULLY;
         PacketUtils.titles[2].writeTitle( channel, version );
         channel.flush();
@@ -158,6 +171,11 @@ public class Connector extends MoveHandler
         userConnection.setNeedLogin( false );
         userConnection.getPendingConnection().finishLogin( userConnection, true );
         markDisconnected = true;
+
+        stringBuilder.append("[BotFilter] Игрок ");
+        stringBuilder.append(userConnection);
+        stringBuilder.append(" успешно прошёл проверку");
+        LOGGER.log(Level.INFO, stringBuilder.toString());
     }
 
     @Override
@@ -183,7 +201,7 @@ public class Connector extends MoveHandler
                 changeStateToCaptcha();
             } else
             {
-                failed( KickType.NOTPLAYER, "Failed position check" );
+                failed( KickType.NOTPLAYER, "Не правильное падение" );
             }
             return;
         }
@@ -226,7 +244,7 @@ public class Connector extends MoveHandler
             String message = chat.getMessage();
             if ( message.length() > 256 )
             {
-                failed( KickType.NOTPLAYER, "Too long message" );
+                failed( KickType.NOTPLAYER, "Слишком длинное сообщение" );
                 return;
             }
             if ( message.replace( "/", "" ).equals( String.valueOf( captchaAnswer ) ) )
@@ -242,7 +260,7 @@ public class Connector extends MoveHandler
                 sendCaptcha();
             } else
             {
-                failed( KickType.NOTPLAYER, "Failed captcha check" );
+                failed( KickType.NOTPLAYER, "Не правильная капча" );
             }
         }
     }
@@ -261,7 +279,7 @@ public class Connector extends MoveHandler
         {
             if ( lastSend == 0 )
             {
-                failed( KickType.NOTPLAYER, "Tried send fake ping" );
+                failed( KickType.NOTPLAYER, "Попытка отправить фейковый пинг" );
                 return;
             }
             long ping = System.currentTimeMillis() - lastSend;
@@ -322,10 +340,17 @@ public class Connector extends MoveHandler
 
     public void failed(KickType type, String kickMessage)
     {
+        StringBuilder stringBuilder = new StringBuilder();
         state = CheckState.FAILED;
         PacketUtils.kickPlayer( type, Protocol.GAME, userConnection.getCh(), version );
         markDisconnected = true;
-        LOGGER.log( Level.INFO, "(BF) [{0}] disconnected: ".concat( kickMessage ), name );
+
+        stringBuilder.append("[BotFilter] Игрок ");
+        stringBuilder.append(userConnection);
+        stringBuilder.append(" провалил проверку: ");
+        stringBuilder.append(kickMessage);
+        LOGGER.log(Level.INFO, stringBuilder.toString());
+//        LOGGER.log( Level.INFO, "(BF) [{0}] disconnected: ".concat( kickMessage ), name );
     }
 
     public void sendMessage(int index) {
