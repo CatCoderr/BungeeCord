@@ -23,6 +23,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -258,7 +259,7 @@ public class BungeeCord extends ProxyServer
      * Start this proxy instance by loading the configuration, plugins and
      * starting the connect thread.
      *
-     * @throws Exception
+     * @throws Exception any critical errors encountered
      */
     @SuppressFBWarnings("RV_RETURN_VALUE_IGNORED_BAD_PRACTICE")
     public void start() throws Exception
@@ -277,8 +278,8 @@ public class BungeeCord extends ProxyServer
         BotFilterThread.startCleanUpThread(); //BotFilter
 
         bossEventLoopGroup = PipelineUtils.newEventLoopGroup( 0, new ThreadFactoryBuilder().setNameFormat( "Netty Boss IO Thread #%1$d" ).build() ); //BotFilter //WaterFall backport
-        eventLoops = workerEventLoopGroup = PipelineUtils.newEventLoopGroup( 0, new ThreadFactoryBuilder().setNameFormat( "Netty Worker IO Thread #%1$d" ).build() );//BotFilter //WaterFall backport
-        queryEventLoopGroup = PipelineUtils.newEventLoopGroup( 1, new ThreadFactoryBuilder().setNameFormat( "Query Netty IO Thread #%1$d" ).build() );//BotFilter
+        eventLoops = workerEventLoopGroup = PipelineUtils.newEventLoopGroup( 0, new ThreadFactoryBuilder().setNameFormat( "Netty Worker IO Thread #%1$d" ).build() ); //BotFilter //WaterFall backport
+        queryEventLoopGroup = PipelineUtils.newEventLoopGroup( 1, new ThreadFactoryBuilder().setNameFormat( "Query Netty IO Thread #%1$d" ).build() ); //BotFilter
 
         File moduleDirectory = new File( "modules" );
         moduleManager.load( this, moduleDirectory );
@@ -329,7 +330,7 @@ public class BungeeCord extends ProxyServer
         {
             if ( info.isProxyProtocol() )
             {
-                getLogger().log( Level.WARNING, "Using PROXY protocol for listener {0}, please ensure this listener is adequately firewalled.", info.getHost() );
+                getLogger().log( Level.WARNING, "Using PROXY protocol for listener {0}, please ensure this listener is adequately firewalled.", info.getSocketAddress() );
 
                 if ( connectionThrottle != null )
                 {
@@ -346,24 +347,26 @@ public class BungeeCord extends ProxyServer
                     if ( future.isSuccess() )
                     {
                         listeners.add( future.channel() );
-                        getLogger().log( Level.INFO, "Listening on {0}", info.getHost() );
+                        getLogger().log( Level.INFO, "Listening on {0}", info.getSocketAddress() );
                     } else
                     {
-                        getLogger().log( Level.WARNING, "Could not bind to host " + info.getHost(), future.cause() );
+                        getLogger().log( Level.WARNING, "Could not bind to host " + info.getSocketAddress(), future.cause() );
                     }
                 }
             };
             new ServerBootstrap()
-                    .channel( PipelineUtils.getServerChannel() )
+                    .channel( PipelineUtils.getServerChannel( info.getSocketAddress() ) )
                     .option( ChannelOption.SO_REUSEADDR, true ) // TODO: Move this elsewhere!
                     .childAttr( PipelineUtils.LISTENER, info )
                     .childHandler( PipelineUtils.SERVER_CHILD )
                     .group( bossEventLoopGroup, workerEventLoopGroup ) //BotFilter //WaterFall backport
-                    .localAddress( info.getHost() )
+                    .localAddress( info.getSocketAddress() )
                     .bind().addListener( listener );
 
             if ( info.isQueryEnabled() )
             {
+                Preconditions.checkArgument( info.getSocketAddress() instanceof InetSocketAddress, "Can only create query listener on UDP address" );
+
                 ChannelFutureListener bindListener = new ChannelFutureListener()
                 {
                     @Override
@@ -375,7 +378,7 @@ public class BungeeCord extends ProxyServer
                             getLogger().log( Level.INFO, "Started query on {0}", future.channel().localAddress() );
                         } else
                         {
-                            getLogger().log( Level.WARNING, "Could not bind to host " + info.getHost(), future.cause() );
+                            getLogger().log( Level.WARNING, "Could not bind to host " + info.getSocketAddress(), future.cause() );
                         }
                     }
                 };
@@ -481,7 +484,7 @@ public class BungeeCord extends ProxyServer
                 {
                     try
                     {
-                        bossEventLoopGroup.awaitTermination( Long.MAX_VALUE, TimeUnit.NANOSECONDS );//BotFilter //WaterFall backport
+                        bossEventLoopGroup.awaitTermination( Long.MAX_VALUE, TimeUnit.NANOSECONDS ); //BotFilter //WaterFall backport
                         workerEventLoopGroup.awaitTermination( Long.MAX_VALUE, TimeUnit.NANOSECONDS ); //BotFilter //WaterFall backport
                         queryEventLoopGroup.awaitTermination( Long.MAX_VALUE, TimeUnit.NANOSECONDS ); //BotFilter
                         break;
@@ -694,6 +697,12 @@ public class BungeeCord extends ProxyServer
 
     @Override
     public ServerInfo constructServerInfo(String name, InetSocketAddress address, String motd, boolean restricted)
+    {
+        return constructServerInfo( name, (SocketAddress) address, motd, restricted );
+    }
+
+    @Override
+    public ServerInfo constructServerInfo(String name, SocketAddress address, String motd, boolean restricted)
     {
         return new BungeeServerInfo( name, address, motd, restricted );
     }

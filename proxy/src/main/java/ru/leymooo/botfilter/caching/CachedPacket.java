@@ -5,7 +5,6 @@ import net.md_5.bungee.protocol.DefinedPacket;
 import net.md_5.bungee.protocol.Protocol;
 
 /**
- *
  * @author Leymooo
  */
 public class CachedPacket
@@ -15,8 +14,9 @@ public class CachedPacket
 
     public CachedPacket(DefinedPacket packet, Protocol... protocols)
     {
-        if (packet != null) {
-            PacketUtils.fillArray(byteBuf, packet, protocols);
+        if ( packet != null )
+        {
+            PacketUtils.fillArray( byteBuf, packet, protocols );
         }
     }
 

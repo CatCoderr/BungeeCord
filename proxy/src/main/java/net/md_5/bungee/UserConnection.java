@@ -3,14 +3,35 @@ package net.md_5.bungee;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
 import io.netty.util.internal.PlatformDependent;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Queue;
+import java.util.UUID;
+import java.util.logging.Level;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
+import net.md_5.bungee.api.Callback;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.ProxyServer;
+import net.md_5.bungee.api.ServerConnectRequest;
+import net.md_5.bungee.api.SkinConfiguration;
 import net.md_5.bungee.api.Title;
-import net.md_5.bungee.api.*;
 import net.md_5.bungee.api.chat.BaseComponent;
 import net.md_5.bungee.api.chat.TextComponent;
 import net.md_5.bungee.api.config.ServerInfo;
@@ -27,17 +48,23 @@ import net.md_5.bungee.forge.ForgeServerHandler;
 import net.md_5.bungee.netty.ChannelWrapper;
 import net.md_5.bungee.netty.HandlerBoss;
 import net.md_5.bungee.netty.PipelineUtils;
-import net.md_5.bungee.protocol.*;
-import net.md_5.bungee.protocol.packet.*;
+import net.md_5.bungee.protocol.DefinedPacket;
+import net.md_5.bungee.protocol.MinecraftDecoder;
+import net.md_5.bungee.protocol.MinecraftEncoder;
+import net.md_5.bungee.protocol.PacketWrapper;
+import net.md_5.bungee.protocol.Protocol;
+import net.md_5.bungee.protocol.ProtocolConstants;
+import net.md_5.bungee.protocol.packet.Chat;
+import net.md_5.bungee.protocol.packet.ClientSettings;
+import net.md_5.bungee.protocol.packet.Kick;
+import net.md_5.bungee.protocol.packet.PlayerListHeaderFooter;
+import net.md_5.bungee.protocol.packet.PluginMessage;
+import net.md_5.bungee.protocol.packet.SetCompression;
 import net.md_5.bungee.tab.ServerUnique;
 import net.md_5.bungee.tab.TabList;
 import net.md_5.bungee.util.BoundedArrayList;
 import net.md_5.bungee.util.CaseInsensitiveSet;
 import net.md_5.bungee.util.ChatComponentTransformer;
-
-import java.net.InetSocketAddress;
-import java.util.*;
-import java.util.logging.Level;
 
 @RequiredArgsConstructor
 public final class UserConnection implements ProxiedPlayer
@@ -77,9 +104,6 @@ public final class UserConnection implements ProxiedPlayer
     @Getter
     private final Collection<ServerInfo> pendingConnects = new HashSet<>();
     /*========================================================================*/
-    @Getter
-    @Setter
-    private long sentPingTime;
     @Getter
     @Setter
     private int ping = 100;
@@ -346,13 +370,13 @@ public final class UserConnection implements ProxiedPlayer
             }
         };
         Bootstrap b = new Bootstrap()
-                .channel( PipelineUtils.getChannel() )
+                .channel( PipelineUtils.getChannel( target.getAddress() ) )
                 .group( ch.getHandle().eventLoop() )
                 .handler( initializer )
                 .option( ChannelOption.CONNECT_TIMEOUT_MILLIS, request.getConnectTimeout() )
                 .remoteAddress( target.getAddress() );
         // Windows is bugged, multi homed users will just have to live with random connecting IPs
-        if ( getPendingConnection().getListener().isSetLocalAddress() && !PlatformDependent.isWindows() )
+        if ( getPendingConnection().getListener().isSetLocalAddress() && !PlatformDependent.isWindows() && getPendingConnection().getListener().getSocketAddress() instanceof InetSocketAddress )
         {
             b.localAddress( getPendingConnection().getListener().getHost().getHostString(), 0 );
         }
@@ -441,10 +465,20 @@ public final class UserConnection implements ProxiedPlayer
         // transform score components
         message = ChatComponentTransformer.getInstance().transform( this, message );
 
-        // Action bar doesn't display the new JSON formattings, legacy works - send it using this for now
         if ( position == ChatMessageType.ACTION_BAR )
         {
-            sendMessage( position, ComponentSerializer.toString( new TextComponent( BaseComponent.toLegacyText( message ) ) ) );
+            // Versions older than 1.11 cannot send the Action bar with the new JSON formattings
+            // Fix by converting to a legacy message, see https://bugs.mojang.com/browse/MC-119145
+            if ( ProxyServer.getInstance().getProtocolVersion() <= ProtocolConstants.MINECRAFT_1_10 )
+            {
+                sendMessage( position, ComponentSerializer.toString( new TextComponent( BaseComponent.toLegacyText( message ) ) ) );
+            } else
+            {
+                net.md_5.bungee.protocol.packet.Title title = new net.md_5.bungee.protocol.packet.Title();
+                title.setAction( net.md_5.bungee.protocol.packet.Title.Action.ACTIONBAR );
+                title.setText( ComponentSerializer.toString( message ) );
+                unsafe.sendPacket( title );
+            }
         } else
         {
             sendMessage( position, ComponentSerializer.toString( message ) );
@@ -474,6 +508,12 @@ public final class UserConnection implements ProxiedPlayer
 
     @Override
     public InetSocketAddress getAddress()
+    {
+        return (InetSocketAddress) getSocketAddress();
+    }
+
+    @Override
+    public SocketAddress getSocketAddress()
     {
         return ch.getRemoteAddress();
     }
@@ -537,16 +577,7 @@ public final class UserConnection implements ProxiedPlayer
     @Override
     public String toString()
     {
-        StringBuilder stringBuilder = new StringBuilder();
-        InetSocketAddress address = getAddress();
-        String name = getName();
-
-        stringBuilder.append(address);
-        stringBuilder.append("/");
-        stringBuilder.append(name);
-
-        return stringBuilder.toString();
-        //return name;
+        return name;
     }
 
     @Override
