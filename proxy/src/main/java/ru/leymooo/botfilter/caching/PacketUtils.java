@@ -91,7 +91,7 @@ public class PacketUtils
 
         DefinedPacket[] packets =
         {
-            new Login( CLIENTID, (short) 2, 0, 1, (short) 0, (short) 100, "flat", 2, false, true ), //0
+            new Login( CLIENTID, (short) 2, 1, 1, (short) 0, (short) 100, "flat", 2, false, true ), //0
             new EmptyChunkPacket( 0, 0 ), //1
             new TimeUpdate( 1, 23700 ), //2
             new PlayerAbilities( (byte) 6, 0f, 0f ), //3
